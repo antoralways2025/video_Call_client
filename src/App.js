@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import CallButton from "./components/CallButton";
 import IncomingCall from "./components/IncomingCall";
 import VideoChat from "./components/VideoChat";
@@ -6,27 +6,36 @@ import socket from "./socket";
 
 function App() {
 
-  useEffect(() => {
+  const [myId, setMyId] = useState(""); // socket ID রাখার জন্য state
 
+  useEffect(() => {
     socket.on("connect", () => {
       console.log("My ID:", socket.id);
+      setMyId(socket.id); // ID আসার পর state update
     });
 
+    // Cleanup listener
+    return () => {
+      socket.off("connect");
+    };
   }, []);
 
-  return (   <div>
+  return (
+    <div>
+      <h1>Hello Baccah</h1>
 
-      <h1> Hello  Baccah _ Your ID: {socket.id}</h1>
-        
-      <VideoChat />
-<div>{socket.id}</div>
-      <CallButton />
-
-      <IncomingCall />
-
-   </div>)
-     
-  
+      {myId ? (
+        <>
+          <p>Your Socket ID: {myId}</p>
+          <VideoChat />
+          <CallButton />
+          <IncomingCall />
+        </>
+      ) : (
+        <p>Connecting to server...</p>
+      )}
+    </div>
+  );
 }
 
 export default App;
