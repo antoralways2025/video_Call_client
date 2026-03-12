@@ -17,9 +17,9 @@ function App() {
   return (   <div>
 
       <h1> Hello  Baccah _ Your ID: {socket.id}</h1>
-
+        
       <VideoChat />
-
+<div>{socket.id}</div>
       <CallButton />
 
       <IncomingCall />
