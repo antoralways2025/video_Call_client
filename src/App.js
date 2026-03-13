@@ -31,7 +31,7 @@ function App() {
 
           <div style={styles.controls}>
             <CallButton />
-            <IncomingCall />
+            <IncomingCall /> 
           </div>
         </>
       ) : (
