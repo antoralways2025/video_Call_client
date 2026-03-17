@@ -8,21 +8,28 @@ function VideoChat() {
   const streamRef = useRef();
 
   const [callingId, setCallingId] = useState("");
+  const [myId, setMyId] = useState("");
   const [inCall, setInCall] = useState(false);
 
-  // STUN + TURN configuration
   const configuration = {
     iceServers: [
-      { urls: "stun:stun.l.google.com:19302" }, // free STUN server
+      { urls: "stun:stun.l.google.com:19302" },
       {
-        urls: "turn:openrelay.metered.ca:80",   // public TURN server
+        urls: "turn:openrelay.metered.ca:80",
         username: "openrelayproject",
-        credential: "openrelayproject"
-      }
-    ]
+        credential: "openrelayproject",
+      },
+    ],
   };
 
-  // Start camera
+  // get my ID
+  useEffect(() => {
+    socket.on("connect", () => {
+      setMyId(socket.id);
+    });
+  }, []);
+
+  // start camera
   useEffect(() => {
     async function startCamera() {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -35,45 +42,61 @@ function VideoChat() {
     startCamera();
   }, []);
 
-  // Signaling listeners
+  // SOCKET EVENTS
   useEffect(() => {
+    // RECEIVE CALL
     socket.on("receive-call", async (data) => {
       const peer = new RTCPeerConnection(configuration);
 
-      streamRef.current.getTracks().forEach(track => peer.addTrack(track, streamRef.current));
+      streamRef.current.getTracks().forEach((track) =>
+        peer.addTrack(track, streamRef.current)
+      );
 
       peer.ontrack = (event) => {
-        if (userVideo.current) userVideo.current.srcObject = event.streams[0];
+        userVideo.current.srcObject = event.streams[0];
       };
 
       peer.onicecandidate = (event) => {
         if (event.candidate) {
-          socket.emit("ice-candidate", { candidate: event.candidate, to: data.from });
+          socket.emit("ice-candidate", {
+            to: data.from,
+            candidate: event.candidate,
+          });
         }
       };
 
-      await peer.setRemoteDescription(new RTCSessionDescription(data.offer));
+      await peer.setRemoteDescription(
+        new RTCSessionDescription(data.offer)
+      );
 
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
 
-      socket.emit("make-answer", { answer, to: data.from });
+      socket.emit("make-answer", {
+        to: data.from,
+        answer,
+      });
 
       peerRef.current = peer;
       setInCall(true);
     });
 
+    // ANSWER RECEIVED
     socket.on("answer-made", async (data) => {
-      if (peerRef.current) {
-        await peerRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
-        setInCall(true);
-      }
+      await peerRef.current.setRemoteDescription(
+        new RTCSessionDescription(data.answer)
+      );
+      setInCall(true);
     });
 
-    socket.on("ice-candidate", async (candidate) => {
-      if (peerRef.current && candidate) {
-        try { await peerRef.current.addIceCandidate(candidate); } 
-        catch (error) { console.error("ICE error:", error); }
+    // ICE
+    socket.on("ice-candidate", async (data) => {
+      if (data.candidate) {
+        try {
+          await peerRef.current.addIceCandidate(data.candidate);
+        } catch (err) {
+          console.log("ICE error:", err);
+        }
       }
     });
 
@@ -84,83 +107,66 @@ function VideoChat() {
     };
   }, []);
 
-  // Call user
-  const callUser = async (id) => {
-    if (!id) return alert("Enter user ID");
-
+  // CALL USER
+  const callUser = async () => {
     const peer = new RTCPeerConnection(configuration);
 
-    streamRef.current.getTracks().forEach(track => peer.addTrack(track, streamRef.current));
+    streamRef.current.getTracks().forEach((track) =>
+      peer.addTrack(track, streamRef.current)
+    );
 
     peer.ontrack = (event) => {
-      if (userVideo.current) userVideo.current.srcObject = event.streams[0];
+      userVideo.current.srcObject = event.streams[0];
     };
 
     peer.onicecandidate = (event) => {
       if (event.candidate) {
-        socket.emit("ice-candidate", { candidate: event.candidate, to: id });
+        socket.emit("ice-candidate", {
+          to: callingId,
+          candidate: event.candidate,
+        });
       }
     };
 
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
 
-    socket.emit("call-user", { to: id, from: socket.id, offer });
+    socket.emit("call-user", {
+      to: callingId,
+      offer,
+    });
 
     peerRef.current = peer;
   };
 
-  // Hang up call
   const hangUp = () => {
-    if (peerRef.current) { peerRef.current.close(); peerRef.current = null; }
-    if (userVideo.current) userVideo.current.srcObject = null;
+    peerRef.current?.close();
+    peerRef.current = null;
+    userVideo.current.srcObject = null;
     setInCall(false);
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.videosContainer}>
-        <div style={styles.videoWrapper}>
-          <video ref={myVideo} autoPlay muted playsInline style={styles.video} />
-          <p style={styles.label}>You</p>
-        </div>
-        <div style={styles.videoWrapper}>
-          <video ref={userVideo} autoPlay playsInline style={styles.video} />
-          <p style={styles.label}>{inCall ? "In Call" : "Remote"}</p>
-        </div>
-      </div>
+    <div>
+      <h3>Your ID: {myId}</h3>
 
-      <div style={styles.controls}>
-        {!inCall && (
-          <>
-            <input
-              type="text"
-              placeholder="Enter User ID"
-              value={callingId}
-              onChange={(e) => setCallingId(e.target.value)}
-              style={styles.input}
-            />
-            <button style={styles.callButton} onClick={() => callUser(callingId)}>Call</button>
-          </>
-        )}
-        {inCall && (
-          <button style={styles.hangupButton} onClick={hangUp}>Hang Up</button>
-        )}
-      </div>
+      <video ref={myVideo} autoPlay muted width="300" />
+      <video ref={userVideo} autoPlay width="300" />
+
+      {!inCall && (
+        <>
+          <input
+            placeholder="Enter ID"
+            value={callingId}
+            onChange={(e) => setCallingId(e.target.value)}
+          />
+          <button onClick={callUser}>Call</button>
+        </>
+      )}
+
+      {inCall && <button onClick={hangUp}>Hang Up</button>}
     </div>
   );
 }
-
-const styles = {
-  container: { display: "flex", flexDirection: "column", alignItems: "center", padding: 20, fontFamily: "Arial" },
-  videosContainer: { display: "flex", gap: 20, flexWrap: "wrap", justifyContent: "center", marginBottom: 20 },
-  videoWrapper: { display: "flex", flexDirection: "column", alignItems: "center" },
-  video: { width: 320, height: 240, borderRadius: 12, backgroundColor: "#000", boxShadow: "0 4px 15px rgba(0,0,0,0.3)" },
-  label: { marginTop: 5, fontWeight: "bold", color: "#555" },
-  controls: { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" },
-  input: { padding: 8, borderRadius: 5, border: "1px solid #ccc", width: 200 },
-  callButton: { padding: "10px 20px", backgroundColor: "#3498db", border: "none", borderRadius: 5, color: "#fff", fontWeight: "bold", cursor: "pointer" },
-  hangupButton: { padding: "10px 20px", backgroundColor: "#e74c3c", border: "none", borderRadius: 5, color: "#fff", fontWeight: "bold", cursor: "pointer" }
-};
 
 export default VideoChat;
